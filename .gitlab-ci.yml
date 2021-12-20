@@ -1,0 +1,9 @@
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  only:
+    - tags
+  script:
+    - mvn clean deploy -DskipTests
