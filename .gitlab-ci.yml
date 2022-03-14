@@ -1,0 +1,9 @@
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  only:
+    - tags
+  script:
+    - mvn deploy -Dscala-2.11 -Dspark2 -DskipTests -Drat.skip=true -Dcheckstyle.skip=true -DaltDeploymentRepository=bilibili-snapshots::default::http://nexus.bilibili.co/content/repositories/snapshots/
