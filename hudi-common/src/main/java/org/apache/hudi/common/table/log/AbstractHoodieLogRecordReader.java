@@ -190,9 +190,7 @@ public abstract class AbstractHoodieLogRecordReader {
     totalLogBlocks = new AtomicLong(0);
     totalLogRecords = new AtomicLong(0);
     HoodieLogFormatReader logFormatReaderWrapper = null;
-    HoodieTimeline commitsTimeline = this.hoodieTableMetaClient.getCommitsTimeline();
-    HoodieTimeline completedInstantsTimeline = commitsTimeline.filterCompletedInstants();
-    HoodieTimeline inflightInstantsTimeline = commitsTimeline.filterInflights();
+    HoodieTimeline inflightInstantsTimeline = this.hoodieTableMetaClient.getCommitsTimeline().filterInflights();
     try {
 
       // Get the key field based on populate meta fields config
@@ -217,16 +215,21 @@ public abstract class AbstractHoodieLogRecordReader {
             && !HoodieTimeline.compareTimestamps(logBlock.getLogBlockHeader().get(INSTANT_TIME), HoodieTimeline.LESSER_THAN_OR_EQUALS, this.latestInstantTime
         )) {
           // hit a block with instant time greater than should be processed, stop processing further
+          LOG.info("hit a block with instant time greater than should be processed, stop processing further. logfile: + " + logFile
+                  + " , blockType: " + logBlock.getBlockType() + " , instantTime: " + instantTime + " , latestInstantTime : " + latestInstantTime  );
           break;
         }
         if (logBlock.getBlockType() != CORRUPT_BLOCK && logBlock.getBlockType() != COMMAND_BLOCK) {
-          if (!completedInstantsTimeline.containsOrBeforeTimelineStarts(instantTime)
-              || inflightInstantsTimeline.containsInstant(instantTime)) {
+            if (!checkIfValidCommit(instantTime) || inflightInstantsTimeline.containsInstant(instantTime)) {
             // hit an uncommitted block possibly from a failed write, move to the next one and skip processing this one
+            LOG.info("hit an uncommitted block possibly from a failed write, move to the next one and skip processing this one. logfile: + " + logFile
+                      + " , blockType: " + logBlock.getBlockType() + " , instantTime: " + instantTime + " , latestInstantTime : " + latestInstantTime  );
             continue;
           }
           if (instantRange.isPresent() && !instantRange.get().isInRange(instantTime)) {
             // filter the log block by instant range
+            LOG.info("filter the log block by instant range. logfile: + " + logFile
+                    + " , instantRange.isPresent() : " + instantRange.isPresent() + " , instantTime: " + instantTime);
             continue;
           }
         }
@@ -344,6 +347,18 @@ public abstract class AbstractHoodieLogRecordReader {
         LOG.error("Unable to close log format reader", ioe);
       }
     }
+  }
+
+  /**
+   * Check whether the current instants are valid
+   * @param instantTime
+   * @return
+   */
+  private boolean checkIfValidCommit(String instantTime) {
+    HoodieTimeline deltaCommitTimeline= this.hoodieTableMetaClient.getActiveTimeline().getDeltaCommitTimeline().filterCompletedInstants();
+    return deltaCommitTimeline.containsInstant(instantTime) ||
+            (deltaCommitTimeline.isBeforeTimelineStarts(instantTime) &&
+                    this.hoodieTableMetaClient.getArchivedTimeline().getDeltaCommitTimeline().filterCompletedInstants().containsOrBeforeTimelineStarts(instantTime));
   }
 
   /**
